@@ -23,19 +23,39 @@ include {
     prepareChrXPanel;
 } from "${projectDir}/modules/custom_panel.nf"
 
+include {
+    jobCompletionMessage;
+} from "${projectDir}/includes/inspection.nf"
+
+
 workflow {
     chromosome = getChromosomes()
     vcf = getPhasedVcf()
     validateVcf(vcf).map { chr, vcf_file -> tuple(chr.baseName, vcf_file) }.set { chrom_vcf }
     getVcfIndex(chrom_vcf).view().set { vcf_fileset }
 
-/*
-    hapmapGeneticMap = getEagleHapmapGeneticMap()
-    vcf_fileset.combine(hapmapGeneticMap).set { eagle_no_ref_phase_input }
-    phased_vcf = eaglePhaseWithoutRef(eagle_no_ref_phase_input)
-    createLegendFile(phased_vcf).view()
-*/
-
+    createLegendFile(vcf_fileset).view()
     m3vcf = getm3vcf(vcf_fileset).view()
+    if(params.autosome == false) {
+        channel.of('X')
+            .join()
+        prepareChrXPanel(vcf_fileset).view()
+    }
 
+}
+
+workflow.onComplete {
+    msg = jobCompletionMessage()
+    if(params.email == 'NULL') {
+        println msg
+    } 
+    else {
+        println msg
+        sendMail(
+            //from: 'eshkev001@myuct.ac.za',
+            to: params.email,
+            subject: '[genemapis status]',
+            body: msg
+        )
+    }
 }

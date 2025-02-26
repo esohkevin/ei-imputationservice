@@ -50,7 +50,7 @@ process getm3vcf() {
             path(input_vcf), \
             path(vcf_index) 
     output:
-        publishDir path: "${params.output_dir}/m3vcfs/", mode: 'copy'
+        publishDir path: "${params.output_dir}/", mode: 'copy'
         tuple \
             val(chrom), \
             path("chr${chrom}*")
@@ -83,18 +83,20 @@ process createLegendFile() {
             path("${input_vcf.simpleName}.legend.gz")
     script:
         """
-        echo "id position a0 a1 all.aaf" > header
+        echo "id position a0 a1 all.aaf" \
+            > ${input_vcf.simpleName}.legend
         vcftools \
             --gzvcf ${input_vcf} \
             --freq \
-            --out ${chrom}
-        sed 's/:/\\t/g' ${chrom}.frq | \
+            --out chr${chrom}
+        sed 's/:/\\t/g' chr${chrom}.frq | \
             sed 1d | \
-            awk '{print \$1":"\$2" "\$2" "\$5" "\$7" "\$8}' \
-            > ${input_vcf.simpleName}.legend
-        cat header ${input_vcf.simpleName}.legend | \
-            bgzip \
-            > ${input_vcf.simpleName}.legend.gz
+            awk '{print \$1":"\$2":"\$5":"\$7,\$2,\$5,\$7,\$8}' \
+            >> ${input_vcf.simpleName}.legend
+        bgzip \
+            -@ ${task.cpus} \
+            -f \
+            ${input_vcf.simpleName}.legend
         """
 }
 
@@ -105,15 +107,16 @@ process prepareChrXPanel() {
     input:
         tuple \
             val(chrom), \
-            path(input_vcf)
+            path(input_vcf), \
+            path(vcf_index)
     output:
         publishDir path: "${params.output_dir}", mode: 'copy'
         tuple \
             val(chrom), \
             path("${input_vcf.simpleName}_PAR1.vcf.gz"), \
-            path("${input_vcf.simpleName}_PAR1,nonPAR.vcf.gz.tbi"), \
+            path("${input_vcf.simpleName}_PAR1.nonPAR.vcf.gz.tbi"), \
             path("${input_vcf.simpleName}_PAR2.vcf.gz"), \
-            path("${input_vcf.simpleName}_PAR2,nonPAR.vcf.gz.tbi"), \
+            path("${input_vcf.simpleName}_PAR2.nonPAR.vcf.gz.tbi"), \
             path("${input_vcf.simpleName}_nonPAR.vcf.gz"), \
             path("${input_vcf.simpleName}_nonPAR.vcf.gz.tbi")
     script:

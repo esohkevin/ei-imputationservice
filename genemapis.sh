@@ -133,6 +133,7 @@ function phaseusage() {
            --mainit             : (optional) number of BEAGLE main iterations [default: 1000]
            --kpbwt              : (optional) number of BEAGLE and EAGLE conditioning haplotypes [default: 50000]
 	   --pbwt               : (optional) number of SHAPEIT PBWT iterations [default: 8]
+           --chunk_size         : (optional) chunk size to impute [default: 20000000]
            --threads            : (optional) number of computer cpus to use [default: 8]
            --njobs              : (optional) number of jobs to submit at once [default: 4]
            --help               : print this help message
@@ -146,7 +147,7 @@ function imputeusage() {
            options:
            --------
            --impute_tool        : (optional) minimac4, impute2, beagle5 [default: minimac4] 
-	   --panel              : (optional) available panels: custom, kgp, h3a, genemapv1p1 [default: genemapv1p1]
+	   --panel              : (optional) available panels: gmv1p1, gmv2p1, kgp, h3a, custom [default: gmv2p1]
            --vcf                : (required) VCF file. Must specify full path
            --autosome           : (optional) specify this flag if your dataset contains only autosomes [default: 1-22,X]
            --output_prefix      : (optional) output prefix [default: myout]
@@ -155,6 +156,7 @@ function imputeusage() {
            --mainit             : (optional) number of BEAGLE main iterations [default: 1000]
            --kpbwt              : (optional) number of BEAGLE and EAGLE conditioning haplotypes [default: 50000]
            --pbwt               : (optional) number of SHAPEIT PBWT iterations [default: 8]
+           --chunk_size         : (optional) chunk size to impute [default: 20000000]
            --threads            : (optional) number of computer cpus to use [default: 8]
            --njobs              : (optional) number of jobs to submit at once [default: 4]
            --help               : print this help message
@@ -252,8 +254,9 @@ params {
   mainit          = ${10}
   kpbwt           = ${11}
   pbwt            = ${12}
-  threads         = ${13}
-  njobs           = ${14}
+  chunk_size      = ${13}
+  threads         = ${14}
+  njobs           = ${15}
 
   /***************************************************************************************
   ~ with_ref: (optional) specify this flag to phase with reference
@@ -270,6 +273,7 @@ params {
   ~ mainit: (optional) number of BEAGLE main iterations [default: 1000]
   ~ kpbwt: (optional) number of BEAGLE and EAGLE conditioning haplotypes [default: 50000]
   ~ pbwt: (optional) number of SHAPEIT PBWT iterations [default: 8]
+  ~ chunk_size: (optional) chunk size to impute [default: 20000000]
   ~ threads: (optional) number of computer cpus to use [default: 8]
   ~ njobs: number of simultaneous jobs to submit [default: 4]
   ****************************************************************************************/
@@ -301,12 +305,18 @@ params {
   mainit          = ${8}
   kpbwt           = ${9}
   pbwt            = ${10}
-  threads         = ${11}
-  njobs           = ${12}
+  chunk_size      = ${11}
+  threads         = ${12}
+  njobs           = ${13}
 
   /***************************************************************************************
   ~ impute_tool: (optional) minimac4, impute2, beagle5 [default: minimac4]
-  ~ panel: (optional) available imputation panels: custom, kgp, h3a, genemapv1p1 [default: genemapv1p1]
+  ~ panel: (optional) available imputation panels: 
+    *gmv1p1: 
+    *gmv2p1 (default): N = 3408; cmr + h3a + kgp + ggvp
+    *kgp: N = 2504
+    *h3a: N = 386
+    *custom: N = 50 (cmr)
   ~ vcf: (required) VCF file. Must specify full path
   ~ autosome: (optional) specify this flag to process autosomes only
   ~ output_prefix: (optional) output prefix [default: myout]
@@ -315,7 +325,9 @@ params {
   ~ mainit: (optional) number of BEAGLE main iterations [default: 1000]
   ~ kpbwt: (optional) number of BEAGLE and EAGLE conditioning haplotypes [default: 50000]
   ~ pbwt: (optional) number of SHAPEIT PBWT iterations [default: 8]
+  ~ chunk_size: (optional) chunk size to impute [default: 20000000]
   ~ threads: (optional) number of computer cpus to use [default: 8]
+  ~ njobs: number of simultaneous jobs to submit [default: 4]
   ****************************************************************************************/
 }
 
@@ -422,7 +434,7 @@ else
             exit 1;
          fi
 
-         prog=`getopt -a --long "with_ref,phase_tool:,impute,impute_tool:,vcf:,autosome,output_prefix:,output_dir:,burnit:,mainit:,kpbwt:,pbwt:,threads:,njobs:" -n "${0##*/}" -- "$@"`; 
+         prog=`getopt -a --long "with_ref,phase_tool:,impute,impute_tool:,vcf:,autosome,output_prefix:,output_dir:,burnit:,mainit:,kpbwt:,pbwt:,chunk_size:,threads:,njobs:" -n "${0##*/}" -- "$@"`; 
 
 
          #- defaults
@@ -439,6 +451,7 @@ else
          mainit=1000
          kpbwt=50000
          pbwt=8
+	 chunk_size=20000000
          threads=8
 	 
          eval set -- "$prog"
@@ -457,6 +470,7 @@ else
 	       --mainit) mainit=$2; shift 2;;
 	       --kpbwt) kpbwt=$2; shift 2;;
 	       --pbwt) pbwt=$2; shift 2;;
+	       --chunk_size) chunk_size=$2; shift 2;;
                --threads) threads="$2"; shift 2;;
                --njobs) njobs="$2"; shift 2;;
                --help) shift; phaseusage; 1>&2; exit 1;;
@@ -479,6 +493,7 @@ else
 	    mainit,$mainit \
 	    kpbwt,$kpbwt \
 	    pbwt,$pbwt \
+	    chunk_size,$chunk_size \
 	    threads,$threads \
 	    njpbs,$njobs && \
          phaseconfig \
@@ -494,6 +509,7 @@ else
 	    $mainit \
 	    $kpbwt \
 	    $pbwt \
+	    $chunk_size \
 	    $threads \
 	    $njobs
       ;;
@@ -507,7 +523,7 @@ else
             exit 1;
          fi
 
-         prog=`getopt -a --long "impute_tool:,panel:,vcf:,autosome,output_prefix:,output_dir:,burnit:,mainit:,kpbwt:,pbwt:,threads:,njobs:" -n "${0##*/}" -- "$@"`; 
+         prog=`getopt -a --long "impute_tool:,panel:,vcf:,autosome,output_prefix:,output_dir:,burnit:,mainit:,kpbwt:,pbwt:,chunk_size:,threads:,njobs:" -n "${0##*/}" -- "$@"`; 
 
 
          #- defaults
@@ -522,6 +538,7 @@ else
          mainit=1000
          kpbwt=50000
          pbwt=8
+	 chunk_size=20000000
          threads=8
 	 
          eval set -- "$prog"
@@ -538,6 +555,7 @@ else
 	       --mainit) mainit=$2; shift 2;;
 	       --kpbwt) kpbwt=$2; shift 2;;
 	       --pbwt) pbwt=$2; shift 2;;
+	       --chunk_size) chunk_size=$2; shift 2;;
                --threads) threads="$2"; shift 2;;
                --njobs) njobs="$2"; shift 2;;
                --help) shift; imputeusage; 1>&2; exit 1;;
@@ -560,6 +578,7 @@ else
 	    mainit,$mainit \
 	    kpbwt,$kpbwt \
 	    pbwt,$pbwt \
+	    chunk_size,$chunk_size \
 	    threads,$threads \
 	    njpbs,$njobs && \
          imputeconfig \
@@ -573,6 +592,7 @@ else
 	    $mainit \
 	    $kpbwt \
 	    $pbwt \
+            $chunk_size \
 	    $threads \
 	    $njobs
       ;;
