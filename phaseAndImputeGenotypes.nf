@@ -52,8 +52,11 @@ workflow {
        if(params.phase_tool == 'eagle2') {
             if(params.with_ref == true) {
                 geneticmap = getEagleHapmapGeneticMap()
-                //refpanel = getKgpPanel()
-                refpanel = getGmv2p1()
+                if(params.panel == "kgp") {
+                    refpanel = getKgpPanel() 
+                } else {
+                    refpanel = getGmv2p1()
+                }
                 refpanel.combine(geneticmap).set { panel_map }
                 vcfFileset.join(panel_map).set { phase_input }
                 phased = eaglePhaseWithRef(phase_input)
