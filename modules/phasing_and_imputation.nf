@@ -7,11 +7,38 @@ def listChromosomes() {
 }
 
 def getChromosomes() {
-    if(params.autosome == "true") {
+    if(params.autosome == true) {
        channel.of(1..22)
     } else {
        channel.of(1..22, 'X')
     }
+}
+
+def getRefPanel() {
+    if(params.impute_tool == 'minimac4' ) {
+        refpanel = getMsav()
+        //if(params.panel == 'kgp') {
+        //    //refpanel = getKgpM3Panel()
+        //    refpanel = getKgpMsav()
+        //} else if(params.panel == 'h3a') {
+        //    //refpanel = getH3aM3Panel()
+        //    refpanel = getH3aMsav()
+        //} else if(params.panel == 'genemapv1p1') {
+        //    //refpanel = getGenemapV2P1M3Panel()
+        //    refpanel = getGenemapV2P1Msav()
+        //}
+    } else {
+        if(params.panel == 'kgp') {
+            refpanel = getKgpPanel()
+        } else if(params.panel == 'h3a') {
+            refpanel = getH3aPanel()
+        } else if(params.panel == 'gmv1p1') {
+            refpanel = getGenemapV1P1Panel()
+        } else if(params.panel == 'gmv2p1') {
+            refpanel = getGmv2p1()
+        }
+    }
+    return refpanel
 }
 
 /*
@@ -34,12 +61,63 @@ def getKgpPanel() {
 	    	  }
 }
 
+
 def getCustomM3Panel() {
     return channel.fromFilePairs( params.panel_dir + "/custom/*.{m3vcf.gz,rec,erate}", size: 3 )
                   .ifEmpty { error: println "\nAn error occurred! Please check that the reference files exist...\n" }
                   .map { chr, ref_fileset ->
                          tuple( chr.replaceFirst(/chr/,""), ref_fileset[0], ref_fileset[1], ref_fileset[2])
                   }
+}
+
+def getGenemapV2P1M3Panel() {
+    return channel.fromFilePairs( params.panel_dir + "/gmv2p1/*.{m3vcf.gz,rec,erate}", size: 3 )
+                  .ifEmpty { error: println "\nAn error occurred! Please check that the reference files exist...\n" }
+                  .map { chr, ref_fileset ->
+                         tuple( chr.replaceFirst(/chr/,""), ref_fileset[0], ref_fileset[1], ref_fileset[2])
+                  }
+}
+
+def getMsav() {
+    return channel.fromPath( params.panel_dir + "/" + params.panel + "/*.msav" )
+                  .ifEmpty { error: println "\nAn error occurred! Please check that the reference files exist...\n" }
+                  .map { msav ->
+                         tuple( msav.simpleName.replaceAll(/chr/,""), msav)
+                  }
+}
+
+
+def getGenemapV1P1Panel() {
+    return channel.fromFilePairs( params.panel_dir + "/genemapv1p1/chr*.genemapwgsv1p1.vcf.{gz,gz.tbi}", size: 2 )
+                  .ifEmpty { error: println "\nAn error occurred! Please check that the reference files exist...\n" }
+                  .map { chr, ref_fileset ->
+                         tuple( chr.replaceFirst(/chr/,""), ref_fileset[0], ref_fileset[1])
+                  }
+}
+
+def getGenemapV1P3Panel() {
+    return channel.fromFilePairs( params.panel_dir + "/cmr/chr*.genemapwgs-v1.shapeit4.noref.refaligned.vcf.{gz,gz.tbi}", size: 2 )
+                  .ifEmpty { error: println "\nAn error occurred! Please check that the reference files exist...\n" }
+                  .map { chr, ref_fileset ->
+                         tuple( chr.replaceFirst(/chr/,""), ref_fileset[0], ref_fileset[1])
+                  }
+}
+
+def getGmv2p1() {
+  if(params.phase_tool == "eagle2") {
+    return channel.fromFilePairs( params.panel_dir + "/gmv2p1/chr*.genemapwgsv1p2.{bcf,bcf.csi}", size: 2 )
+                  .ifEmpty { error: println "\nAn error occurred! Please check that the reference files exist...\n" }
+                  .map { chr, ref_fileset ->
+                         tuple( chr.replaceFirst(/chr/,""), ref_fileset[0], ref_fileset[1])
+                  }
+  }
+  else {
+    return channel.fromFilePairs( params.panel_dir + "/gmv2p1/chr*.genemapwgsv1p2.vcf.{gz,gz.tbi}", size: 2 )
+                  .ifEmpty { error: println "\nAn error occurred! Please check that the reference files exist...\n" }
+                  .map { chr, ref_fileset ->
+                         tuple( chr.replaceFirst(/chr/,""), ref_fileset[0], ref_fileset[1])
+                  }
+  }
 }
 
 def getCustomVcfPanel() {
@@ -123,33 +201,36 @@ process removeDupVarsAndIndexVcf() {
     output:
         tuple \
             val(chrom), \
-            path("${input_vcf.simpleName}-biallelic-snps.vcf.gz"), \
-            path("${input_vcf.simpleName}-biallelic-snps.vcf.gz.tbi")
+            path("${input_vcf.simpleName}.nodups.vcf.gz"), \
+            path("${input_vcf.simpleName}.nodups.vcf.gz.tbi")
     script:
         """
-        bcftools \
-            sort \
-            -Oz \
-            -o ${input_vcf.baseName}-sorted.vcf.gz \
-            ${input_vcf}
+        #bcftools \
+        #    sort \
+        #    -Oz \
+        #    -o ${input_vcf.baseName}-sorted.vcf.gz \
+        #    ${input_vcf}
 
         bcftools \
             norm \
-            -m + \
+            -m +any \
+            -D \
+            --threads ${task.cpus} \
             -Oz \
-            ${input_vcf.baseName}-sorted.vcf.gz | \
+            ${input_vcf} | \
         bcftools \
             view \
-            -v snps \
+            -v snps,indels \
+            --threads ${task.cpus} \
             -m2 \
             -M2 \
             -Oz | \
-        tee ${input_vcf.simpleName}-biallelic-snps.vcf.gz | \
+        tee ${input_vcf.simpleName}.nodups.vcf.gz | \
         bcftools \
             index \
             -ft \
             --threads ${task.cpus} \
-            -o ${input_vcf.simpleName}-biallelic-snps.vcf.gz.tbi \
+            -o ${input_vcf.simpleName}.nodups.vcf.gz.tbi \
         """
 }
 
@@ -300,31 +381,74 @@ process beaglephase() {
     label 'beagle'
     label 'phaseGenotypes'
     input:
-	tuple val(chrom), path(input_vcf), path(vcf_index), path(ref_vcf), path(ref_index), path(geneticMap)
+	tuple \
+            val(chrom), \
+            path(input_vcf), \
+            path(vcf_index), \
+            path(ref_vcf), \
+            path(ref_index), \
+            path(geneticMap)
     output:
 	publishDir path: "${params.output_dir}", mode: 'copy'
 	tuple \
             val(chrom), \
             path("chr${chrom}.*.vcf.gz")
     script:
+    if(params.impute == true)
 	"""
-        if [[ ${params.impute} == "true" ]]; then
-           out_suffix=imputed;
-        else
-           out_suffix=phased
-        fi
 	beagle \
 	    gt="${input_vcf}" \
 	    ref="${ref_vcf}" \
 	    map="${geneticMap}" \
 	    chrom=${chrom} \
-	    burnin="${params.burninIter}" \
-	    iterations="${params.mainIter}" \
-	    ne=20000 \
+	    burnin="${params.burnit}" \
+	    iterations="${params.mainit}" \
+	    ne=15000 \
 	    impute=${params.impute} \
 	    nthreads=${task.cpus} \
-	    out="chr${chrom}.\${out_suffix}"
+	    out="chr${chrom}.dose
 	"""
+    else
+        """
+        beagle \
+            gt=${input_vcf} \
+            ref=${ref_vcf} \
+            map=${geneticMap} \
+            chrom=${chrom} \
+            burnin=${params.burnit} \
+            iterations=${params.mainit} \
+            ne=15000 \
+            impute=${params.impute} \
+            nthreads=${task.cpus} \
+            out="chr${chrom}.phased
+        """
+}
+
+process beaglePhaseWithoutRef() {
+    tag "processing chr${chrom}"
+    label 'beagle'
+    label 'phaseGenotypes'
+    input:
+        tuple \
+            val(chrom), \
+            path(input_vcf), \
+            path(vcf_index)
+    output:
+        publishDir path: "${params.output_dir}", mode: 'copy'
+        tuple \
+            val(chrom), \
+            path("chr${chrom}.*.vcf.gz")
+    script:
+        """
+        beagle \
+            gt=${input_vcf} \
+            chrom=${chrom} \
+            burnin=${params.burnit} \
+            iterations=${params.mainit} \
+            ne=15000 \
+            nthreads=${task.cpus} \
+            out=chr${chrom}.phased
+        """
 }
 
 process eaglePhaseWithoutRef() {
@@ -573,21 +697,21 @@ process prepareChrXPanel() {
         """
 }
 
-process imputeVariantsWithMinimac4() {
+process imputeVariantsWithMinimac4Old() {
     tag "processing chr${chrom}"
-    label 'minimac4'
+    label 'minimac4_old'
     label 'mem_minimac4'
     cache 'lenient'
     input:
         tuple \
             val(chrom), \
-            path(target_vcf), \
-            path(target_vcf_index), \
             path(erate), \
             path(ref_vcf), \
-            path(rec)
+            path(rec), \
+            path(target_vcf), \
+            path(target_vcf_index)
     output:
-        publishDir path: "${params.output_dir}/imputed/", mode: 'copy'
+        publishDir path: "${params.output_dir}/${params.panel}/", mode: 'copy'
         tuple \
             val(chrom), \
             path("chr${chrom}.dose.vcf.gz"), \
@@ -609,3 +733,37 @@ process imputeVariantsWithMinimac4() {
         bgzip -f chr${chrom}.info
         """
 }
+
+process imputeVariantsWithMinimac4() {
+    tag "processing chr${chrom}"
+    label 'minimac4'
+    label 'mem_minimac4'
+    //cache 'lenient'
+    input:
+        tuple \
+            val(chrom), \
+            path(msav), \
+            path(target_vcf), \
+            path(target_vcf_index)
+    output:
+        publishDir path: "${params.output_dir}/${params.panel}/", mode: 'copy'
+        tuple \
+            val(chrom), \
+            path("chr${chrom}.dose.vcf.gz"), \
+            path("chr${chrom}.empiricalDose.vcf.gz")
+    script:
+        """
+        minimac4 \
+          --all-typed-sites \
+          --chunk ${params.chunk_size} \
+          --threads ${task.cpus} \
+          --format GT,HDS,DS,GP \
+          --output chr${chrom}.dose.vcf.gz \
+          --empirical-output chr${chrom}.empiricalDose.vcf.gz \
+          ${msav} \
+          ${target_vcf}
+
+        #bgzip -f chr${chrom}.info
+        """
+}
+

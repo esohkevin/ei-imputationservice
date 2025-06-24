@@ -9,17 +9,21 @@ include {
     getPlinkGeneticMap;
     getEagleHapmapGeneticMap;
     getShapeitGeneticMap;
+    getRefPanel;
     getKgpPanel;
+    getGmv2p1;
     getVcf;
     //getVcfFileset;
     splitVcfByChrom;
     beaglephase;
+    beaglePhaseWithoutRef;
     eaglePhaseWithoutRef;
     eaglePhaseWithRef;
     shapeitPhaseWithRef;
     shapeitPhaseWithoutRef;
     getVcfIndex;
     getVcfIndex as getPhasedVcfIndex;
+    removeDupVarsAndIndexVcf;
     getCustomVcfPanel;
     getm3vcf;
     getCustomM3Panel;
@@ -36,7 +40,8 @@ workflow {
     if(params.phase == true && params.impute == false) {
        println "\nMODE: PHASE ONLY\n"
    
-       getChromosomes().set { chromosome }
+       getChromosomes()
+           .set { chromosome }
        
        vcf = getVcf()
        chromosome.combine(vcf).set { split_vcf_input }
@@ -47,7 +52,8 @@ workflow {
        if(params.phase_tool == 'eagle2') {
             if(params.with_ref == true) {
                 geneticmap = getEagleHapmapGeneticMap()
-                refpanel = getKgpPanel()
+                //refpanel = getKgpPanel()
+                refpanel = getGmv2p1()
                 refpanel.combine(geneticmap).set { panel_map }
                 vcfFileset.join(panel_map).set { phase_input }
                 phased = eaglePhaseWithRef(phase_input)
@@ -59,7 +65,8 @@ workflow {
        } else if(params.phase_tool == 'shapeit4') {
             if(params.with_ref == true) {
                 geneticmap = getShapeitGeneticMap()
-                refpanel = getKgpPanel()
+                //refpanel = getKgpPanel()
+                refpanel = getGmv2p1()
                 refpanel.join(geneticmap).set { panel_map }
                 vcfFileset.join(panel_map).set { phase_input }
                 phased = shapeitPhaseWithRef(phase_input).view()
@@ -67,9 +74,18 @@ workflow {
                 geneticmap = getShapeitGeneticMap()
                 vcfFileset.join(geneticmap).set { phase_input }
                 shapeitPhaseWithoutRef(phase_input).view().set { phased }
-          }
+            }
        } else if(params.phase_tool == 'beagle5') {
-          geneticmap = getPlinkGeneticMap()
+            if(params.with_ref == true) {
+                geneticmap = getPlinkGeneticMap()
+                //refpanel = getKgpPanel()
+                refpanel = getGmv2p1()
+                refpanel.join(geneticmap).set { panel_map }
+                vcfFileset.join(panel_map).set { phase_input }
+                phased = beaglePhaseWithoutRef(phase_input).view()
+            } else {
+                beaglePhaseWithoutRef(vcfFileset).view().set { phased }
+            }
        }
     } else if(params.phase == false && params.impute == true) {
         println "\nMODE: IMPUTE ONLY\n"
@@ -82,11 +98,15 @@ workflow {
         vcf_fileset.map { chr, vcf, index -> tuple("${chr}", vcf, index) }.set { vcfFileset }
 
         if(params.impute_tool == 'minimac4') {
-            vcf = getPhasedVcf()
-            validateVcf(vcf).map { chr, vcf_file, vcf_index -> tuple(chr.baseName, vcf_file, vcf_index) }.set { vcf_fileset }
-            getCustomM3Panel().set{ minimac_ref_panel }
-            vcf_fileset.join(minimac_ref_panel).set{ minimac_input }
+            //vcf = getPhasedVcf()
+            //validateVcf(vcf).map { chr, vcf_file, vcf_index -> tuple(chr.baseName, vcf_file, vcf_index) }.set { vcf_fileset }
+            //getCustomM3Panel().set{ minimac_ref_panel }
+            getRefPanel()
+                .join(vcfFileset)
+                .set{ minimac_input }
             imputeVariantsWithMinimac4(minimac_input)
+        } else {
+            getRefPanel().view()
         }
     } else if(params.phase == true && params.impute == true) {
         println "\nMODE: PHASE AND IMPUTE\n"
@@ -95,7 +115,7 @@ workflow {
         getChromosomes().set { chromosome }
         chromosome.combine(vcf).set { split_vcf_input }
         splitVcfByChrom(split_vcf_input).set { per_chr_vcf }
-        getVcfIndex(per_chr_vcf).set { vcf_fileset }
+        removeDupVarsAndIndexVcf(per_chr_vcf).set { vcf_fileset }
         vcf_fileset.map { chr, vcf, index -> tuple("${chr}", vcf, index) }.set { vcfFileset }
 
         if(params.phase_tool == 'eagle2' && params.impute_tool == 'minimac4') {
@@ -135,7 +155,13 @@ workflow {
              imputeVariantsWithMinimac4(minimac_input)
 
         } else if(params.phase_tool == 'beagle5') {
+           refpanel = getRefPanel()
            geneticmap = getPlinkGeneticMap()
+           vcfFileset
+               .join(refpanel)
+               .join(geneticmap)
+               .set { beagle_input }
+           beaglephase(beagle_input).view()
         }
     } else {
         error: println "\nWORKFLOW STOPPED: Please select a run mode - 'phase' and/or 'impute' -\n"

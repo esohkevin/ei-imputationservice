@@ -1,4 +1,4 @@
-#!/usr/bin/env sh
+#!/usr/bin/env bash
 
 #--- genemapimputation workflow wrapper ---#
 
@@ -16,7 +16,8 @@ function usage() {
               align: Check strand and reference allele overlap.
 	      phase: Phase (and Impute) genotypes.
              impute: Only impute missing genotypes.
-           xxxxxxxx: .
+          makepanel: Generate Minimac M3VCFs and IMPUTE Legend files
+	             from phased VCF files.
            xxxxxxxx: .
           xxxxxxxxx: .
 
@@ -103,7 +104,7 @@ function alignusage() {
    echo """
            options:
            --------
-           --autosome           : (optional) specify this flag to process autosomes only.
+           --autosome           : (optional) specify this flag if your dataset contains only autosomes [default: 1-22,X]
            --vcf                : (required) VCF file. Must specify full path.
            --output_prefix      : (optional) output prefix [default: myout].
            --output_dir         : (required) path to save output files.
@@ -125,13 +126,14 @@ function phaseusage() {
 	   --impute             : (optional) to phase and impute in one run, add this flag
 	   --impute_tool        : (optional) minimac4, impute2, beagle5 [default: minimac4] 
            --vcf                : (required) VCF file. Must specify full path
-	   --autosome           : (optional) specify this flag to process autosomes only
+           --autosome           : (optional) specify this flag if your dataset contains only autosomes [default: 1-22,X]
            --output_prefix      : (optional) output prefix [default: myout]
            --output_dir         : (required) path to save output files
            --burnit             : (optional) number of BEAGLE burn in iterations [default: 2000]
            --mainit             : (optional) number of BEAGLE main iterations [default: 1000]
            --kpbwt              : (optional) number of BEAGLE and EAGLE conditioning haplotypes [default: 50000]
 	   --pbwt               : (optional) number of SHAPEIT PBWT iterations [default: 8]
+           --chunk_size         : (optional) chunk size to impute [default: 20000000]
            --threads            : (optional) number of computer cpus to use [default: 8]
            --njobs              : (optional) number of jobs to submit at once [default: 4]
            --help               : print this help message
@@ -145,15 +147,16 @@ function imputeusage() {
            options:
            --------
            --impute_tool        : (optional) minimac4, impute2, beagle5 [default: minimac4] 
-	   --panel              : (optional) available panels: custom, kgp, h3a [default: kgp]
+	   --panel              : (optional) available panels: gmv1p1, gmv2p1, kgp, h3a, custom [default: gmv2p1]
            --vcf                : (required) VCF file. Must specify full path
-           --autosome           : (optional) specify this flag to process autosomes only
+           --autosome           : (optional) specify this flag if your dataset contains only autosomes [default: 1-22,X]
            --output_prefix      : (optional) output prefix [default: myout]
            --output_dir         : (required) path to save output files
            --burnit             : (optional) number of BEAGLE burn in iterations [default: 2000]
            --mainit             : (optional) number of BEAGLE main iterations [default: 1000]
            --kpbwt              : (optional) number of BEAGLE and EAGLE conditioning haplotypes [default: 50000]
            --pbwt               : (optional) number of SHAPEIT PBWT iterations [default: 8]
+           --chunk_size         : (optional) chunk size to impute [default: 20000000]
            --threads            : (optional) number of computer cpus to use [default: 8]
            --njobs              : (optional) number of jobs to submit at once [default: 4]
            --help               : print this help message
@@ -161,6 +164,21 @@ function imputeusage() {
    """
 }
 
+function panelusage() {
+   echo -e "\nUsage: genemapis makepanel <profile> [options] ..."
+   echo """
+           options:
+           --------
+           --autosome           : (optional) specify this flag if your dataset contains only autosomes [default: 1-22,X]
+           --vcf_dir            : (required) directory containing phased single chromosome VCF files.
+           --output_prefix      : (optional) output prefix [default: myout].
+           --output_dir         : (required) path to save output files.
+           --threads            : (optional) number of computer cpus to use [default: 8].
+           --njobs              : (optional) number of jobs to submit at once [default: 4]
+           --help               : print this help message.
+
+   """
+}
 
 ############################################# CONFIGURATION FILES ####################################################
 function testconfig() {
@@ -180,20 +198,35 @@ function alignconfig() { #params passed as arguments
 [ -e ${3}-align.config ] && rm ${3}-align.config
 
 #alignconfig $autosome $vcf $output_prefix $output_dir $exclude_sample $threads $njobs
-echo """`setglobalparams`
+echo """
 
 params {
   //====================================
   // genemapis align workflow parameters 
   //====================================
-  autosome        = $1                          // (optional) include this argument if you wish to only process autosomes [default: false]
-  vcf             = '$2'                        // (required) VCF file. Must specify full path.
-  output_prefix   = '$3'                        // (optional) output prefix [default: myout]
-  output_dir      = '$4'                        // (required) path to save output files.
-  exclude_sample  = '$5'                        // (optional) reference samples to exclude. Single column, one sample per line.
-  threads         = $6                          // number of computer cpus to use [default: 8]
-  njobs           = $7                          // (optional) number of jobs to submit at once [default: 4]
+
+  autosome        = $1 
+  vcf             = '$2'
+  output_prefix   = '$3'
+  output_dir      = '$4'
+  exclude_sample  = '$5'
+  threads         = $6
+  njobs           = $7
+
+  /*****************************************************************
+  ~ autosome: (optional) specify this flag if your dataset contains 
+    only autosomes [default: 1-22,X]
+  ~ vcf: (required) VCF file. Must specify full path.
+  ~ output_prefix: (optional) output prefix [default: myout]
+  ~ output_dir: (required) path to save output files.
+  ~ exclude_sample: (optional) reference samples to exclude. Single 
+    column, one sample per line.
+  ~ threads: number of computer cpus to use [default: 8]
+  ~ njobs: (optional) number of jobs to submit at once [default: 4]
+  *****************************************************************/ 
 }
+
+`setglobalparams`
 """ >> ${3}-align.config
 }
 
@@ -221,8 +254,9 @@ params {
   mainit          = ${10}
   kpbwt           = ${11}
   pbwt            = ${12}
-  threads         = ${13}
-  njobs           = ${14}
+  chunk_size      = ${13}
+  threads         = ${14}
+  njobs           = ${15}
 
   /***************************************************************************************
   ~ with_ref: (optional) specify this flag to phase with reference
@@ -239,6 +273,7 @@ params {
   ~ mainit: (optional) number of BEAGLE main iterations [default: 1000]
   ~ kpbwt: (optional) number of BEAGLE and EAGLE conditioning haplotypes [default: 50000]
   ~ pbwt: (optional) number of SHAPEIT PBWT iterations [default: 8]
+  ~ chunk_size: (optional) chunk size to impute [default: 20000000]
   ~ threads: (optional) number of computer cpus to use [default: 8]
   ~ njobs: number of simultaneous jobs to submit [default: 4]
   ****************************************************************************************/
@@ -270,12 +305,18 @@ params {
   mainit          = ${8}
   kpbwt           = ${9}
   pbwt            = ${10}
-  threads         = ${11}
-  njobs           = ${12}
+  chunk_size      = ${11}
+  threads         = ${12}
+  njobs           = ${13}
 
   /***************************************************************************************
   ~ impute_tool: (optional) minimac4, impute2, beagle5 [default: minimac4]
-  ~ panel: (optional) available imputation panels: custom, kgp, h3a [default: kgp]
+  ~ panel: (optional) available imputation panels: 
+    *gmv1p1: 
+    *gmv2p1 (default): N = 3408; cmr + h3a + kgp + ggvp
+    *kgp: N = 2504
+    *h3a: N = 386
+    *custom: N = 50 (cmr)
   ~ vcf: (required) VCF file. Must specify full path
   ~ autosome: (optional) specify this flag to process autosomes only
   ~ output_prefix: (optional) output prefix [default: myout]
@@ -284,12 +325,48 @@ params {
   ~ mainit: (optional) number of BEAGLE main iterations [default: 1000]
   ~ kpbwt: (optional) number of BEAGLE and EAGLE conditioning haplotypes [default: 50000]
   ~ pbwt: (optional) number of SHAPEIT PBWT iterations [default: 8]
+  ~ chunk_size: (optional) chunk size to impute [default: 20000000]
   ~ threads: (optional) number of computer cpus to use [default: 8]
+  ~ njobs: number of simultaneous jobs to submit [default: 4]
   ****************************************************************************************/
 }
 
 `setglobalparams`
 """ >> ${5}-impute.config
+}
+
+function panelconfig() { #params passed as arguments
+#check and remove config file if it exists
+[ -e ${3}-makepanel.config ] && rm ${3}-makepanel.config
+
+#alignconfig $autosome $vcf $output_prefix $output_dir $exclude_sample $threads $njobs
+echo """
+
+params {
+  //========================================
+  // genemapis makepanel workflow parameters
+  //========================================
+
+  autosome        = $1
+  vcf_dir         = '$2'
+  output_prefix   = '$3'
+  output_dir      = '$4'
+  threads         = $5
+  njobs           = $6
+
+  /*****************************************************************
+  ~ autosome: (optional) specify this flag if your dataset contains 
+    only autosomes [default: 1-22,X]
+  ~ vcf_dir: (required) VCF file. Must specify full path.
+  ~ output_prefix: (optional) output prefix [default: myout]
+  ~ output_dir: (required) path to save output files.
+  ~ threads: number of computer cpus to use [default: 8]
+  ~ njobs: (optional) number of jobs to submit at once [default: 4]
+  *****************************************************************/ 
+}
+
+`setglobalparams`
+""" >> ${3}-makepanel.config
 }
 
 
@@ -357,7 +434,7 @@ else
             exit 1;
          fi
 
-         prog=`getopt -a --long "with_ref,phase_tool:,impute,impute_tool:,vcf:,autosome,output_prefix:,output_dir:,burnit:,mainit:,kpbwt:,pbwt:,threads:,njobs:" -n "${0##*/}" -- "$@"`; 
+         prog=`getopt -a --long "with_ref,phase_tool:,impute,impute_tool:,vcf:,autosome,output_prefix:,output_dir:,burnit:,mainit:,kpbwt:,pbwt:,chunk_size:,threads:,njobs:" -n "${0##*/}" -- "$@"`; 
 
 
          #- defaults
@@ -374,6 +451,7 @@ else
          mainit=1000
          kpbwt=50000
          pbwt=8
+	 chunk_size=20000000
          threads=8
 	 
          eval set -- "$prog"
@@ -392,6 +470,7 @@ else
 	       --mainit) mainit=$2; shift 2;;
 	       --kpbwt) kpbwt=$2; shift 2;;
 	       --pbwt) pbwt=$2; shift 2;;
+	       --chunk_size) chunk_size=$2; shift 2;;
                --threads) threads="$2"; shift 2;;
                --njobs) njobs="$2"; shift 2;;
                --help) shift; phaseusage; 1>&2; exit 1;;
@@ -414,6 +493,7 @@ else
 	    mainit,$mainit \
 	    kpbwt,$kpbwt \
 	    pbwt,$pbwt \
+	    chunk_size,$chunk_size \
 	    threads,$threads \
 	    njpbs,$njobs && \
          phaseconfig \
@@ -429,6 +509,7 @@ else
 	    $mainit \
 	    $kpbwt \
 	    $pbwt \
+	    $chunk_size \
 	    $threads \
 	    $njobs
       ;;
@@ -442,7 +523,7 @@ else
             exit 1;
          fi
 
-         prog=`getopt -a --long "impute_tool:,panel:,vcf:,autosome,output_prefix:,output_dir:,burnit:,mainit:,kpbwt:,pbwt:,threads:,njobs:" -n "${0##*/}" -- "$@"`; 
+         prog=`getopt -a --long "impute_tool:,panel:,vcf:,autosome,output_prefix:,output_dir:,burnit:,mainit:,kpbwt:,pbwt:,chunk_size:,threads:,njobs:" -n "${0##*/}" -- "$@"`; 
 
 
          #- defaults
@@ -457,6 +538,7 @@ else
          mainit=1000
          kpbwt=50000
          pbwt=8
+	 chunk_size=20000000
          threads=8
 	 
          eval set -- "$prog"
@@ -473,6 +555,7 @@ else
 	       --mainit) mainit=$2; shift 2;;
 	       --kpbwt) kpbwt=$2; shift 2;;
 	       --pbwt) pbwt=$2; shift 2;;
+	       --chunk_size) chunk_size=$2; shift 2;;
                --threads) threads="$2"; shift 2;;
                --njobs) njobs="$2"; shift 2;;
                --help) shift; imputeusage; 1>&2; exit 1;;
@@ -495,6 +578,7 @@ else
 	    mainit,$mainit \
 	    kpbwt,$kpbwt \
 	    pbwt,$pbwt \
+	    chunk_size,$chunk_size \
 	    threads,$threads \
 	    njpbs,$njobs && \
          imputeconfig \
@@ -508,8 +592,61 @@ else
 	    $mainit \
 	    $kpbwt \
 	    $pbwt \
+            $chunk_size \
 	    $threads \
 	    $njobs
+      ;;
+      makepanel)
+         #pass profile as argument
+         checkprofile $2;
+         profile=$2;
+         shift;
+         if [ $# -lt 2 ]; then
+            panelusage;
+            exit 1;
+         fi
+
+         prog=`getopt -a --long "help,autosome,vcf_dir:,output_prefix:,output_dir:,threads:,njobs:" -n "${0##*/}" -- "$@"`;
+
+         # defaults
+         autosome=false 
+         vcf_dir=NULL     
+         output_prefix=myout
+         output_dir=NULL    
+         threads=8          
+         njobs=4            
+
+         eval set -- "$prog"
+
+         while true; do
+            case $1 in
+               --autosome) autosome=true; shift;;
+               --vcf_dir) vcf_dir="$2"; shift 2;;
+               --output_prefix) output_prefix="$2"; shift 2;;
+               --output_dir) output_dir="$2"; shift 2;;
+               --threads) threads="$2"; shift 2;;
+               --njobs) njobs="$2"; shift 2;;
+               --help) shift; panelusage; 1>&2; exit 1;;
+               --) shift; break;;
+               *) shift; panelusage; 1>&2; exit 1;;
+            esac
+         done
+
+         #- check required options
+         check_required_params \
+             vcf_dir,$vcf_dir \
+	     output_dir,$output_dir && \
+         check_optional_params \
+	     output_prefix,$output_prefix \
+	     threads,$threads \
+	     njobs,$njobs && \
+         panelconfig \
+	     $autosome \
+	     $vcf_dir \
+	     $output_prefix \
+	     $output_dir \
+	     $threads \
+	     $njobs
       ;;      
       *) shift; usage; exit 1;;
    esac
