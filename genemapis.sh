@@ -417,11 +417,23 @@ else
          done
 
          #- check required options
-         check_required_params vcf,$vcf
-         check_output_dir $output_dir
-         check_optional_params output_prefix,$output_prefix exclude_sample,$exclude_sample threads,$threads njobs,$njobs
+         check_required_params \
+            output_dir,$output_dir \
+	    vcf,$vcf && \
+         check_optional_params \
+	    output_prefix,$output_prefix \
+            exclude_sample,$exclude_sample \
+            threads,$threads \
+            njpbs,$njobs && \
+         alignconfig \
+	   $autosome \
+	   $vcf \
+	   $output_prefix \
+	   $output_dir \
+	   $exclude_sample \
+	   $threads \
+	   $njobs
 
-         alignconfig $autosome $vcf $output_prefix $output_dir $exclude_sample $threads $njobs
          #echo `nextflow -c ${out}-qc.config run qualitycontrol.nf -profile $profile -w ${outdir}/work/`
       ;;
       phase)
