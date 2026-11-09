@@ -122,6 +122,7 @@ function phaseusage() {
            options:
            --------
 	   --with_ref           : (optional) specify this flag to phase with reference
+	   --panel              : (optional) select a reference to phase against. Available ref: kgp, gmv2p1, gmv2p2
 	   --phase_tool         : (optional) shapeit4, eagle2, beagle5 [default: shapeit4]
 	   --impute             : (optional) to phase and impute in one run, add this flag
 	   --impute_tool        : (optional) minimac4, impute2, beagle5 [default: minimac4] 
@@ -133,7 +134,8 @@ function phaseusage() {
            --mainit             : (optional) number of BEAGLE main iterations [default: 1000]
            --kpbwt              : (optional) number of BEAGLE and EAGLE conditioning haplotypes [default: 50000]
 	   --pbwt               : (optional) number of SHAPEIT PBWT iterations [default: 8]
-           --chunk_size         : (optional) chunk size to impute [default: 20000000]
+           --chunk_size         : (optional) chunk size to phase/impute [default: 5000000]
+	   --overlap            : (optional) number of bases chunks overlap by [default: 1000]
            --threads            : (optional) number of computer cpus to use [default: 8]
            --njobs              : (optional) number of jobs to submit at once [default: 4]
            --help               : print this help message
@@ -147,7 +149,7 @@ function imputeusage() {
            options:
            --------
            --impute_tool        : (optional) minimac4, impute2, beagle5 [default: minimac4] 
-	   --panel              : (optional) available panels: gmv1p1, gmv2p1, kgp, h3a, custom [default: gmv2p1]
+	   --panel              : (optional) available panels: gmv1p1, gmv2p1, gmv2p2, kgp, h3a, custom [default: gmv2p1]
            --vcf                : (required) VCF file. Must specify full path
            --autosome           : (optional) specify this flag if your dataset contains only autosomes [default: 1-22,X]
            --output_prefix      : (optional) output prefix [default: myout]
@@ -233,7 +235,7 @@ params {
 
 function phaseconfig() { #params passed as arguments
 #check and remove config file if it exists
-[ -e ${7}-phase.config ] && rm ${7}-phase.config
+[ -e ${8}-phase.config ] && rm ${8}-phase.config
 
 echo """
 params {
@@ -242,25 +244,27 @@ params {
   //====================================
 
   phase           = true
-  with_ref        = ${1} 
-  phase_tool      = '${2}'
-  impute          = ${3}
-  impute_tool     = '${4}'
-  vcf             = '${5}'
-  autosome        = ${6}
-  output_prefix   = '${7}'
-  output_dir      = '${8}'
-  burnit          = ${9}
-  mainit          = ${10}
-  kpbwt           = ${11}
-  pbwt            = ${12}
-  chunk_size      = ${13}
-  threads         = ${14}
-  njobs           = ${15}
+  with_ref        = ${1}
+  panel           = '${2}'
+  phase_tool      = '${3}'
+  impute          = ${4}
+  impute_tool     = '${5}'
+  vcf             = '${6}'
+  autosome        = ${7}
+  output_prefix   = '${8}'
+  output_dir      = '${9}'
+  burnit          = ${10}
+  mainit          = ${11}
+  kpbwt           = ${12}
+  pbwt            = ${13}
+  chunk_size      = ${14}
+  overlap         = ${15}
+  threads         = ${16}
+  njobs           = ${17}
 
   /***************************************************************************************
   ~ with_ref: (optional) specify this flag to phase with reference
-    available ref: kgp
+  ~ panel: (optional) select a reference to phase against. Available ref: kgp, gmv2p1, gmv2p2
   ~ phase_tool: (optional) shapeit4, eagle2, beagle5 [default: shapeit4]
   ~ impute: (optional) specify this flag to impute
   ~ impute_tool: (optional) minimac4, impute2, beagle5 [default: minimac4]
@@ -274,13 +278,14 @@ params {
   ~ kpbwt: (optional) number of BEAGLE and EAGLE conditioning haplotypes [default: 50000]
   ~ pbwt: (optional) number of SHAPEIT PBWT iterations [default: 8]
   ~ chunk_size: (optional) chunk size to impute [default: 20000000]
+  ~ overlap: (optional) number of bases chunks overlap by on each side [default: 1000]
   ~ threads: (optional) number of computer cpus to use [default: 8]
   ~ njobs: number of simultaneous jobs to submit [default: 4]
   ****************************************************************************************/
 }
 
 `setglobalparams`
-""" >> ${7}-phase.config
+""" >> ${8}-phase.config
 }
 
 function imputeconfig() { #params passed as arguments
@@ -314,6 +319,7 @@ params {
   ~ panel: (optional) available imputation panels: 
     *gmv1p1: 
     *gmv2p1 (default): N = 3408; cmr + h3a + kgp + ggvp
+    *gmv2p2: GeneMAP WGS of 673 samples, majority SCD
     *kgp: N = 2504
     *h3a: N = 386
     *custom: N = 50 (cmr)
@@ -446,13 +452,14 @@ else
             exit 1;
          fi
 
-         prog=`getopt -a --long "with_ref,phase_tool:,impute,impute_tool:,vcf:,autosome,output_prefix:,output_dir:,burnit:,mainit:,kpbwt:,pbwt:,chunk_size:,threads:,njobs:" -n "${0##*/}" -- "$@"`; 
+         prog=`getopt -a --long "with_ref,panel:,phase_tool:,impute,impute_tool:,vcf:,autosome,output_prefix:,output_dir:,burnit:,mainit:,kpbwt:,pbwt:,chunk_size:,overlap:,threads:,njobs:" -n "${0##*/}" -- "$@"`; 
 
 
          #- defaults
 
          with_ref=false
-         phase_tool=shapeit4
+         panel=gmv2p1
+	 phase_tool=shapeit4
          impute=false
          impute_tool=minimac4
          vcf=NULL
@@ -463,7 +470,8 @@ else
          mainit=1000
          kpbwt=50000
          pbwt=8
-	 chunk_size=20000000
+	 chunk_size=5000000
+	 overlap=1000
          threads=8
 	 
          eval set -- "$prog"
@@ -471,6 +479,7 @@ else
          while true; do
             case $1 in
 	       --with_ref) with_ref=true; shift;;
+	       --panel) panel=$2; shift 2;;
 	       --phase_tool) phase_tool=$2; shift 2;;
 	       --impute) impute=true; shift;;
 	       --impute_tool) impute_tool=$2; shift 2;;
@@ -483,6 +492,7 @@ else
 	       --kpbwt) kpbwt=$2; shift 2;;
 	       --pbwt) pbwt=$2; shift 2;;
 	       --chunk_size) chunk_size=$2; shift 2;;
+               --overlap) overlap=$2; shift 2;;
                --threads) threads="$2"; shift 2;;
                --njobs) njobs="$2"; shift 2;;
                --help) shift; phaseusage; 1>&2; exit 1;;
@@ -498,6 +508,7 @@ else
 	    vcf,$vcf \
 	    output_dir,$output_dir && \
          check_optional_params \
+	    panel,$panel \
 	    phase_tool,$phase_tool \
 	    impute_tool,$impute_tool \
 	    output_prefix,$output_prefix \
@@ -506,10 +517,12 @@ else
 	    kpbwt,$kpbwt \
 	    pbwt,$pbwt \
 	    chunk_size,$chunk_size \
+            overlap,$overlap \
 	    threads,$threads \
 	    njpbs,$njobs && \
          phaseconfig \
 	    $with_ref \
+	    $panel \
 	    $phase_tool \
 	    $impute \
 	    $impute_tool \
@@ -522,6 +535,7 @@ else
 	    $kpbwt \
 	    $pbwt \
 	    $chunk_size \
+	    $overlap \
 	    $threads \
 	    $njobs
       ;;

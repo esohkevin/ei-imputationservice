@@ -8,24 +8,15 @@ include {
     getPlinkGeneticMap;
     getEagleHapmapGeneticMap;
     getShapeitGeneticMap;
-    getThousandGenomesReference;
-    getVcf;
+    getPanelVcf;
+    getVCF;
     splitVcfByChrom;
     sortIndexVcf;
     checkStrand;
     concatVcfs;
-    beaglephase;
-    eaglePhaseWithoutRef;
-    eaglePhaseWithRef;
-    shapeitPhaseWithRef;
-    shapeitPhaseWithoutRef;
     getVcfIndex;
     removeDupVarsAndIndexVcf;
     getVcfIndex as getPhasedVcfIndex;
-    getCostumReferencePanel;
-    getm3vcf;
-    getMinimacReference;
-    imputeVariantsWithMinimac4;
 } from "${projectDir}/modules/phasing_and_imputation.nf"
 
 include {
@@ -44,15 +35,18 @@ workflow {
           .set { chromosome }
     }
 
-    getVcf()
+    getVCF()
        .set { vcf }
 
     chromosome
        .combine(vcf)
        .set { split_vcf_input }
 
-    getThousandGenomesReference()
-       .set { thousandGenomesReference }
+    getPanelVcf()
+       .set { refpanel }
+
+    //getBref()
+    //    .set { refpanel }
 
     getHapmapGeneticMap()
        .set { geneticMap }
@@ -69,24 +63,11 @@ workflow {
 
     vcfFileset
 	.map { chrom, vcfFile, vcfIndex -> tuple( "${chrom}", vcfFile, vcfIndex ) }
-	.join( thousandGenomesReference )
+	.join( refpanel )
 	.join( geneticMap )
 	.set { checkstrand_input }
 
     alignedVcfs = checkStrand( checkstrand_input ).map { chr, vcf, log -> tuple(chr, vcf) }
     aligned_indexed_vcfs = getVcfIndex(alignedVcfs).map { chr, vcf, index -> tuple(vcf, index) }.collect()
     concatVcfs(aligned_indexed_vcfs)
-
-//    getPlinkGeneticMap()
-//       .set { plinkGeneticMap }
-//    getEagleHapmapGeneticMap()
-//       .set { eagleGeneticMap }
-//
-//    refPanel = getCostumReferencePanel()
-//    vcf_fileset.map { chr, vcf, index -> tuple("${chr}", vcf, index) }.set { vcfFileset }
-//    refPanel.map { chr, vcf, index -> tuple("${chr}", vcf, index) }.set { ref_panel }
-//    vcfFileset.join(ref_panel).set { phase_input }
-//    phase_input.join(plinkGeneticMap).set { impute_input }
-//
-//    beaglephase(impute_input)
 }
