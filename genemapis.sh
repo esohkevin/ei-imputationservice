@@ -264,7 +264,7 @@ params {
 
   /***************************************************************************************
   ~ with_ref: (optional) specify this flag to phase with reference
-  ~ panel: (optional) select a reference to phase against. Available ref: kgp, gmv2p1, gmv2p2
+  ~ panel: (optional) select a reference to phase against. Available ref: kgp, gmp1v2, gmp3v1
   ~ phase_tool: (optional) shapeit4, eagle2, beagle5 [default: shapeit4]
   ~ impute: (optional) specify this flag to impute
   ~ impute_tool: (optional) minimac4, impute2, beagle5 [default: minimac4]
@@ -317,12 +317,10 @@ params {
   /***************************************************************************************
   ~ impute_tool: (optional) minimac4, impute2, beagle5 [default: minimac4]
   ~ panel: (optional) available imputation panels: 
-    *gmv1p1: 
-    *gmv2p1 (default): N = 3408; cmr + h3a + kgp + ggvp
-    *gmv2p2: GeneMAP WGS of 673 samples, majority SCD
-    *kgp: N = 2504
-    *h3a: N = 386
-    *custom: N = 50 (cmr)
+    *gmp1v1: N = 50 (cmr)
+    *gmp1v2: N = 3408; cmr + h3a + kgp + ggvp
+    *gmp3v1: GeneMAP WGS of 673 samples, majority SCD
+    *kgp (default): N = 2504
   ~ vcf: (required) VCF file. Must specify full path
   ~ autosome: (optional) specify this flag to process autosomes only
   ~ output_prefix: (optional) output prefix [default: myout]
